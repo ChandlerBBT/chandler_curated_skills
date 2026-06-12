@@ -7,10 +7,10 @@ description: Maintain and synchronize Codex skills across devices through a priv
 
 Use this skill to keep user-authored Codex skills portable across devices. It maintains a GitHub-backed catalog plus source copies for syncable skills.
 
-Repository split:
+Repository split for this project:
 
-- Publish this management skill itself to `chandler_curated_skills`.
-- Store each user's generated skill inventory and syncable skill sources in `chandler_codex_skills_list`.
+- Publish this reusable management skill itself to a curated skills repository, such as `chandler_curated_skills`.
+- Store each user's generated skill inventory and syncable skill sources in that user's own private catalog repository. The default repository name is derived from the GitHub owner, such as `jack_codex_skills_list` for owner `jack`, and both owner and repo name are configurable.
 
 ## Ground Rules
 
@@ -20,7 +20,8 @@ Repository split:
 - A plain skill cannot run continuously by itself. For automatic sync, install an OS scheduled task, a Codex automation, or an explicit project hook that invokes the bundled script.
 - A list alone cannot reinstall local custom skills on another device. Keep both `skills-list.json` and source copies under `skill_sources/`.
 - Do not store credentials, `.env` files, private keys, `auth.json`, caches, build outputs, or virtual environments in the sync repo.
-- Prefer a private GitHub repository for the skills catalog. Default catalog repo name: `chandler_codex_skills_list`.
+- Prefer a private GitHub repository for the skills catalog. Default catalog repo name: `<owner>_codex_skills_list`.
+- Never assume the GitHub owner is ChandlerBBT. Infer it from an authenticated GitHub tool when possible, otherwise ask the user.
 - Keep the management skill source separate in a curated-skills repo such as `chandler_curated_skills`.
 
 ## Quick Workflow
@@ -29,15 +30,16 @@ Run the bundled script from this skill:
 
 ```bash
 python scripts/sync_skills.py status
-python scripts/sync_skills.py sync --repo ChandlerBBT/chandler_codex_skills_list
-python scripts/sync_skills.py install --repo ChandlerBBT/chandler_codex_skills_list
-python scripts/sync_skills.py publish-self --repo ChandlerBBT/chandler_curated_skills
+python scripts/sync_skills.py configure --owner YOUR_GITHUB_OWNER
+python scripts/sync_skills.py sync
+python scripts/sync_skills.py install
+python scripts/sync_skills.py publish-self --repo OWNER_OR_ORG/curated-skills-repo
 ```
 
 When the user has not configured a repo:
 
 1. Detect whether `~/.codex/cross-device-sync-skills-list.json` exists.
-2. If not, ask for or infer the GitHub repo full name. Offer `ChandlerBBT/chandler_codex_skills_list` as the default when appropriate.
+2. If not, ask for or infer the GitHub owner. Offer `<owner>_codex_skills_list` as the default repo name, but let the user change it.
 3. Check whether the repo exists with the available GitHub connector or GitHub CLI.
 4. If it exists, run `install` first on a new device, then `sync`.
 5. If it does not exist, create a private repo if a GitHub write mechanism is available. Otherwise, guide the user to authorize GitHub or create the repo, then run `sync`.
@@ -50,6 +52,7 @@ When the user has not configured a repo:
 - `install`: pull the sync repo and install remote skill sources into `$HOME/.agents/skills`.
 - `status`: compare local skills with the last prepared repo snapshot.
 - `configure`: save repo settings to `~/.codex/cross-device-sync-skills-list.json`.
+- `bootstrap`: infer or accept a GitHub owner, save config, create the private catalog repo when a creation-capable auth path exists, then prepare the first local snapshot.
 - `publish-self`: prepare a local package of this management skill for the curated skills repository.
 
 ## Conflict Policy
@@ -70,10 +73,10 @@ Use the best available path:
 
 If no GitHub write path exists, stop after preparing the local sync repository and explain exactly what authorization is missing.
 
-Do not create the catalog repo inside the curated skills repo. They serve different purposes:
+Do not create a user's catalog repo inside the curated skills repo. They serve different purposes:
 
 - `chandler_curated_skills`: distribution source for this reusable sync skill.
-- `chandler_codex_skills_list`: private device-specific skills catalog and source backup.
+- `<owner>_codex_skills_list` or a user-chosen name: private device-specific skills catalog and source backup.
 
 ## Files Created In The Sync Repo
 

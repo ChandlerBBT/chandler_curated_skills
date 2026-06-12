@@ -23,3 +23,7 @@ Codex can display duplicate skill names from different paths. The manifest must 
 ## System and plugin-bundled skills
 
 System skills and plugin cache skills should be inventoried only. They should be restored by installing the corresponding Codex version or plugin, not by copying cache internals across devices.
+
+## Multi-user behavior
+
+Do not hardcode the maintainer's GitHub account into the sync flow. The curated repository that distributes this skill is separate from each user's private catalog repository. On first run, infer the authenticated GitHub owner when possible; otherwise ask the user for an owner and offer `<owner>_codex_skills_list` as the default repo name, such as `jack_codex_skills_list` for owner `jack`.

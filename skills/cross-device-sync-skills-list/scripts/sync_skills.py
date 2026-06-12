@@ -17,8 +17,7 @@ import urllib.request
 from pathlib import Path
 
 
-DEFAULT_CATALOG_REPO_NAME = "chandler_codex_skills_list"
-DEFAULT_CURATED_REPO_NAME = "chandler_curated_skills"
+DEFAULT_CATALOG_REPO_TEMPLATE = "{owner}_codex_skills_list"
 SKILL_NAME = "cross-device-sync-skills-list"
 CONFIG_PATH = Path.home() / ".codex" / "cross-device-sync-skills-list.json"
 EXCLUDED_DIRS = {
@@ -82,20 +81,52 @@ def codex_home() -> Path:
 
 
 def default_local_repo() -> Path:
-    return codex_home() / "skills-sync" / DEFAULT_CATALOG_REPO_NAME
+    config = load_config()
+    repo_name = config.get("repo_name") or "codex_skills_list"
+    return codex_home() / "skills-sync" / repo_name
 
 
-def default_curated_local_repo() -> Path:
-    return codex_home() / "skills-sync" / DEFAULT_CURATED_REPO_NAME
+def default_repo_name(owner: str | None) -> str:
+    return DEFAULT_CATALOG_REPO_TEMPLATE.format(owner=owner) if owner else "codex_skills_list"
 
 
 def resolve_repo(args: argparse.Namespace, config: dict) -> str | None:
-    return args.repo or config.get("repository_full_name")
+    if args.repo:
+        return args.repo
+    if config.get("repository_full_name"):
+        return config["repository_full_name"]
+    owner = getattr(args, "owner", None) or config.get("github_owner")
+    repo_name = getattr(args, "repo_name", None) or config.get("repo_name") or default_repo_name(owner)
+    return f"{owner}/{repo_name}" if owner else None
 
 
 def resolve_local_repo(args: argparse.Namespace, config: dict) -> Path:
     value = args.local_repo or config.get("local_repo_path")
     return Path(value).expanduser() if value else default_local_repo()
+
+
+def infer_github_owner() -> str | None:
+    env_owner = os.environ.get("GITHUB_OWNER") or os.environ.get("GH_OWNER")
+    if env_owner:
+        return env_owner
+    gh = shutil.which("gh")
+    if gh:
+        result = run([gh, "api", "user", "--jq", ".login"], check=False)
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        req = urllib.request.Request(
+            "https://api.github.com/user",
+            headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
+        )
+        try:
+            with urllib.request.urlopen(req) as response:
+                return json.loads(response.read().decode("utf-8"))["login"]
+        except urllib.error.HTTPError:
+            return None
+    configured = run(["git", "config", "--global", "github.user"], check=False)
+    return configured.stdout.strip() or None
 
 
 def parse_skill_md(path: Path) -> dict:
@@ -312,8 +343,10 @@ def git_commit_and_push(repo_dir: Path, message: str, push: bool) -> None:
 
 def publish_self(args: argparse.Namespace) -> None:
     config = load_config()
-    repo_full_name = args.repo or config.get("curated_repository_full_name") or f"ChandlerBBT/{DEFAULT_CURATED_REPO_NAME}"
-    repo_dir = Path(args.local_repo).expanduser() if args.local_repo else Path(config.get("curated_local_repo_path", default_curated_local_repo()))
+    repo_full_name = args.repo or config.get("curated_repository_full_name")
+    if not repo_full_name:
+        raise SystemExit("Pass --repo owner/name for the curated skills repository.")
+    repo_dir = Path(args.local_repo).expanduser() if args.local_repo else Path(config.get("curated_local_repo_path", codex_home() / "skills-sync" / repo_full_name.split("/", 1)[1]))
     ensure_git_repo(repo_dir, repo_full_name)
     source = find_this_skill_dir()
     target = repo_dir / "skills" / SKILL_NAME
@@ -439,13 +472,42 @@ def status(args: argparse.Namespace) -> None:
 
 def configure(args: argparse.Namespace) -> None:
     config = load_config()
+    owner = args.owner or infer_github_owner()
+    repo_name = args.repo_name or config.get("repo_name") or default_repo_name(owner)
     if args.repo:
         config["repository_full_name"] = args.repo
+    elif owner:
+        config["repository_full_name"] = f"{owner}/{repo_name}"
+    if owner:
+        config["github_owner"] = owner
+    if repo_name:
+        config["repo_name"] = repo_name
     if args.local_repo:
         config["local_repo_path"] = str(Path(args.local_repo).expanduser())
     config["updated_at"] = now_iso()
     save_config(config)
     print(f"Saved config at {CONFIG_PATH}")
+
+
+def bootstrap(args: argparse.Namespace) -> None:
+    config = load_config()
+    owner = args.owner or config.get("github_owner") or infer_github_owner()
+    if not owner:
+        raise SystemExit(
+            "Could not infer your GitHub owner. Run configure --owner YOUR_GITHUB_OWNER, "
+            "or authenticate GitHub CLI / set GITHUB_TOKEN."
+        )
+    repo_name = args.repo_name or config.get("repo_name") or default_repo_name(owner)
+    repo_full_name = args.repo or f"{owner}/{repo_name}"
+    configure_args = argparse.Namespace(repo=repo_full_name, owner=owner, repo_name=repo_name, local_repo=args.local_repo)
+    configure(configure_args)
+    if args.create:
+        try:
+            github_api_create_repo(repo_full_name, private=True)
+        except Exception as exc:
+            print(f"Could not create GitHub repo automatically: {exc}", file=sys.stderr)
+            print("Create it as a private repository, then run sync.", file=sys.stderr)
+    prepare(argparse.Namespace(repo=repo_full_name, local_repo=args.local_repo, include_repo=args.include_repo), action="bootstrap")
 
 
 def github_api_create_repo(repo_full_name: str, private: bool = True) -> None:
@@ -486,7 +548,9 @@ def github_api_create_repo(repo_full_name: str, private: bool = True) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo", help="GitHub repository full name, e.g. ChandlerBBT/chandler_codex_skills_list")
+    parser.add_argument("--repo", help="GitHub repository full name, e.g. owner/chandler_codex_skills_list")
+    parser.add_argument("--owner", help="GitHub owner or organization for the catalog repository")
+    parser.add_argument("--repo-name", help="Catalog repository name, default: <owner>_codex_skills_list")
     parser.add_argument("--local-repo", help="Local sync repository path")
     parser.add_argument("--include-repo", action="store_true", help="Also inventory repo-scoped .agents/skills")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -502,8 +566,19 @@ def main() -> None:
     install_parser.add_argument("--no-pull", dest="pull", action="store_false")
     configure_parser = sub.add_parser("configure")
     configure_parser.add_argument("--repo", required=False)
+    configure_parser.add_argument("--owner", required=False)
+    configure_parser.add_argument("--repo-name", required=False)
     configure_parser.add_argument("--local-repo", required=False)
+    bootstrap_parser = sub.add_parser("bootstrap")
+    bootstrap_parser.add_argument("--owner", required=False)
+    bootstrap_parser.add_argument("--repo", required=False)
+    bootstrap_parser.add_argument("--repo-name", required=False)
+    bootstrap_parser.add_argument("--local-repo", required=False)
+    bootstrap_parser.add_argument("--create", action="store_true", help="Try to create the private catalog repo when credentials allow it")
     create_parser = sub.add_parser("create-github-repo")
+    create_parser.add_argument("--owner", required=False)
+    create_parser.add_argument("--repo", required=False)
+    create_parser.add_argument("--repo-name", required=False)
     create_parser.add_argument("--private", action="store_true", default=True)
     publish_parser = sub.add_parser("publish-self")
     publish_parser.add_argument("--no-push", action="store_true")
