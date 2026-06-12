@@ -1,0 +1,7 @@
+interface:
+  display_name: "stock_analysis"
+  short_description: "股票投研流程、估值择时与风控复盘技能包"
+  default_prompt: "Use $stock-analysis to build a disciplined stock research view with valuation, timing, risk controls, and review rules."
+
+policy:
+  allow_implicit_invocation: true
