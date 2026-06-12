@@ -1,4 +1,5 @@
 interface:
-  display_name: "Cross-device Skills Sync"
-  short_description: "Keep Codex skills synced through a private GitHub repository."
-  default_prompt: "Use $cross-device-sync-skills-list to sync my Codex skills across devices."
+  display_name: "Cross-device Sync Legacy"
+  short_description: "Legacy alias for the newer cross-device-sync skill."
+  default_prompt: "Use $cross-device-sync instead of this legacy skill."
+

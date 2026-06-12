@@ -1,0 +1,5 @@
+interface:
+  display_name: "Cross-device Sync"
+  short_description: "Sync Codex skills and safe setup metadata across devices."
+  default_prompt: "Use $cross-device-sync to bootstrap my Codex setup sync."
+

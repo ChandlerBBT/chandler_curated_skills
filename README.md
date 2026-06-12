@@ -22,7 +22,7 @@ Curated Codex skills for reusable workflows, research discipline, and cross-devi
 |---|---|---|
 | `artifact-manager` | 管理报告、Markdown、HTML、图表、PPT 资产、数据表和研究产物，自动维护目录、版本、changelog 和 artifact index。 | `skills/artifact-manager` |
 | `stock-analysis` | 面向股票研究的严谨投研流程，覆盖基本面、财报质量、估值、技术择时、催化验证、仓位风控和复盘规则回写。 | `skills/stock-analysis` |
-| `cross-device-sync-skills-list` | 通过每个用户自己的 GitHub 私有仓库维护 Codex skills 清单和可同步源码，方便多设备同步。默认清单仓库名为 `<github-owner>_codex_skills_list`。 | `skills/cross-device-sync-skills-list` |
+| `cross-device-sync` | 通过每个用户自己的 GitHub 私有仓库维护 Codex skills、红acted Codex 配置、MCP 链接、SSH alias 和 Git remote 信息，方便多设备同步。默认同步仓库名为 `<github-owner>_codex_sync`。 | `skills/cross-device-sync` |
 
 ### 推荐安装方式
 
@@ -30,7 +30,7 @@ Curated Codex skills for reusable workflows, research discipline, and cross-devi
 
 ```text
 Use $skill-installer to install the skill from:
-https://github.com/ChandlerBBT/chandler_curated_skills/tree/main/skills/cross-device-sync-skills-list
+https://github.com/ChandlerBBT/chandler_curated_skills/tree/main/skills/cross-device-sync
 ```
 
 替换最后的路径即可安装其他 skill：
@@ -60,28 +60,28 @@ macOS/Linux: ~/.codex/skills/<skill-name>/
 
 ### 跨设备同步快速开始
 
-安装 `cross-device-sync-skills-list` 后，在 Codex 中说：
+安装 `cross-device-sync` 后，在 Codex 中说：
 
 ```text
-Use $cross-device-sync-skills-list to bootstrap my skills sync.
+Use $cross-device-sync to bootstrap my Codex setup sync.
 ```
 
 首次运行时，它会：
 
 1. 识别或询问你的 GitHub owner。
-2. 默认使用 `<owner>_codex_skills_list` 作为私有清单仓库名，例如 `jack_codex_skills_list`。
+2. 默认使用 `<owner>_codex_sync` 作为私有同步仓库名，例如 `jack_codex_sync`。
 3. 检测该仓库是否存在。
 4. 如果不存在，在具备授权时创建私有仓库。
-5. 扫描本机 Codex skills，生成 `skills-list.json`、`skills-list.md` 和可同步 skill 源码副本。
-6. 在其他设备上根据云端清单安装或更新 skills。
+5. 扫描本机 Codex skills、安全配置清单、MCP、SSH alias 和 Git remote 信息。
+6. 在其他设备上先生成 diff 报告，再让用户选择 cloud wins、local wins、merge 或 skip。
 
-更详细说明见 [`docs/cross-device-sync-skills-list.md`](docs/cross-device-sync-skills-list.md)。
+更详细说明见 [`docs/cross-device-sync.md`](docs/cross-device-sync.md)。
 
 ### 文档
 
 - [`docs/artifact-manager.md`](docs/artifact-manager.md)
 - [`docs/stock-analysis.md`](docs/stock-analysis.md)
-- [`docs/cross-device-sync-skills-list.md`](docs/cross-device-sync-skills-list.md)
+- [`docs/cross-device-sync.md`](docs/cross-device-sync.md)
 
 ---
 
@@ -95,7 +95,7 @@ Use $cross-device-sync-skills-list to bootstrap my skills sync.
 |---|---|---|
 | `artifact-manager` | Keeps reports, Markdown, HTML, charts, slide assets, data tables, and research deliverables organized with directories, versions, changelog, and artifact index. | `skills/artifact-manager` |
 | `stock-analysis` | A rigorous public-equity research workflow covering fundamentals, financial quality, valuation, technical timing, catalysts, position risk, and failure-review rule writeback. | `skills/stock-analysis` |
-| `cross-device-sync-skills-list` | Maintains a Codex skills inventory and syncable skill source copies through each user's own private GitHub repository. The default catalog repo name is `<github-owner>_codex_skills_list`. | `skills/cross-device-sync-skills-list` |
+| `cross-device-sync` | Maintains Codex skills, redacted Codex config, MCP links, SSH aliases, and Git remotes through each user's own private GitHub repository. The default sync repo name is `<github-owner>_codex_sync`. | `skills/cross-device-sync` |
 
 ### Recommended Install
 
@@ -103,7 +103,7 @@ Ask Codex to install a skill with the built-in installer:
 
 ```text
 Use $skill-installer to install the skill from:
-https://github.com/ChandlerBBT/chandler_curated_skills/tree/main/skills/cross-device-sync-skills-list
+https://github.com/ChandlerBBT/chandler_curated_skills/tree/main/skills/cross-device-sync
 ```
 
 Swap the final path to install another skill:
@@ -133,26 +133,25 @@ macOS/Linux: ~/.codex/skills/<skill-name>/
 
 ### Cross-device Sync Quick Start
 
-After installing `cross-device-sync-skills-list`, ask Codex:
+After installing `cross-device-sync`, ask Codex:
 
 ```text
-Use $cross-device-sync-skills-list to bootstrap my skills sync.
+Use $cross-device-sync to bootstrap my Codex setup sync.
 ```
 
 On first run, it will:
 
 1. Infer or ask for your GitHub owner.
-2. Default to `<owner>_codex_skills_list` as the private catalog repo name, such as `jack_codex_skills_list`.
+2. Default to `<owner>_codex_sync` as the private sync repo name, such as `jack_codex_sync`.
 3. Check whether that repository exists.
 4. Create the private repository when an authorized GitHub path is available.
-5. Scan local Codex skills and generate `skills-list.json`, `skills-list.md`, and syncable skill source copies.
-6. Install or update skills from the cloud catalog on your other devices.
+5. Scan local Codex skills, safe config inventory, MCP, SSH alias, and Git remote metadata.
+6. Generate a diff report on other devices before asking whether cloud, local, merge, or skip should win.
 
-See [`docs/cross-device-sync-skills-list.md`](docs/cross-device-sync-skills-list.md) for details.
+See [`docs/cross-device-sync.md`](docs/cross-device-sync.md) for details.
 
 ### Documentation
 
 - [`docs/artifact-manager.md`](docs/artifact-manager.md)
 - [`docs/stock-analysis.md`](docs/stock-analysis.md)
-- [`docs/cross-device-sync-skills-list.md`](docs/cross-device-sync-skills-list.md)
-
+- [`docs/cross-device-sync.md`](docs/cross-device-sync.md)

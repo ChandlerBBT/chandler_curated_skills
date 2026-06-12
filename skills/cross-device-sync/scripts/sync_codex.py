@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synchronize Codex user skills through a private GitHub-backed repository."""
+"""Synchronize Codex skills and safe setup metadata through a private GitHub repository."""
 
 from __future__ import annotations
 
@@ -9,17 +9,23 @@ import fnmatch
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
 
-DEFAULT_CATALOG_REPO_TEMPLATE = "{owner}_codex_skills_list"
-SKILL_NAME = "cross-device-sync-skills-list"
-CONFIG_PATH = Path.home() / ".codex" / "cross-device-sync-skills-list.json"
+DEFAULT_CATALOG_REPO_TEMPLATE = "{owner}_codex_sync"
+SKILL_NAME = "cross-device-sync"
+LEGACY_SKILL_NAME = "cross-device-sync-skills-list"
+CONFIG_PATH = Path.home() / ".codex" / "cross-device-sync.json"
+LEGACY_CONFIG_PATH = Path.home() / ".codex" / "cross-device-sync-skills-list.json"
+SENSITIVE_KEY_RE = re.compile(r"(token|secret|password|passwd|pwd|key|credential|auth|cookie|session)", re.I)
+TOKEN_RE = re.compile(r"(gh[pousr]_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|[A-Za-z0-9_-]{32,})")
 EXCLUDED_DIRS = {
     ".git",
     ".hg",
@@ -67,7 +73,9 @@ def run(cmd: list[str], cwd: Path | None = None, check: bool = True) -> subproce
 
 def load_config() -> dict:
     if CONFIG_PATH.exists():
-        return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        return json.loads(CONFIG_PATH.read_text(encoding="utf-8-sig"))
+    if LEGACY_CONFIG_PATH.exists():
+        return json.loads(LEGACY_CONFIG_PATH.read_text(encoding="utf-8-sig"))
     return {}
 
 
@@ -82,12 +90,12 @@ def codex_home() -> Path:
 
 def default_local_repo() -> Path:
     config = load_config()
-    repo_name = config.get("repo_name") or "codex_skills_list"
+    repo_name = config.get("repo_name") or "codex_sync"
     return codex_home() / "skills-sync" / repo_name
 
 
 def default_repo_name(owner: str | None) -> str:
-    return DEFAULT_CATALOG_REPO_TEMPLATE.format(owner=owner) if owner else "codex_skills_list"
+    return DEFAULT_CATALOG_REPO_TEMPLATE.format(owner=owner) if owner else "codex_sync"
 
 
 def resolve_repo(args: argparse.Namespace, config: dict) -> str | None:
@@ -154,6 +162,166 @@ def should_exclude(path: Path) -> bool:
         return True
     lower = path.name.lower()
     return any(fnmatch.fnmatch(lower, pattern.lower()) for pattern in EXCLUDED_PATTERNS)
+
+
+def redact_url(value: str) -> str:
+    parsed = urllib.parse.urlsplit(value)
+    if not parsed.scheme or not parsed.netloc:
+        return value
+    netloc = parsed.netloc
+    if "@" in netloc:
+        netloc = "<credentials>@" + netloc.rsplit("@", 1)[1]
+    query_pairs = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+    redacted_pairs = [
+        (key, "<REDACTED>" if SENSITIVE_KEY_RE.search(key) or TOKEN_RE.search(val) else val)
+        for key, val in query_pairs
+    ]
+    query = urllib.parse.urlencode(redacted_pairs)
+    fragment = "<REDACTED>" if TOKEN_RE.search(parsed.fragment) else parsed.fragment
+    return urllib.parse.urlunsplit((parsed.scheme, netloc, parsed.path, query, fragment))
+
+
+def redact_value(key: str, value):
+    if SENSITIVE_KEY_RE.search(str(key)):
+        return "<REDACTED>"
+    if isinstance(value, str):
+        value = redact_url(value)
+        return TOKEN_RE.sub("<REDACTED>", value)
+    if isinstance(value, list):
+        return [redact_value(key, item) for item in value]
+    if isinstance(value, dict):
+        return {k: redact_value(k, v) for k, v in value.items()}
+    return value
+
+
+def redact_text(text: str) -> str:
+    redacted_lines = []
+    assignment = re.compile(r"^(\s*[\w.\-]+\s*=\s*)(.*)$")
+    for line in text.splitlines():
+        match = assignment.match(line)
+        if match and SENSITIVE_KEY_RE.search(match.group(1)):
+            redacted_lines.append(match.group(1) + '"<REDACTED>"')
+            continue
+        redacted_lines.append(TOKEN_RE.sub("<REDACTED>", redact_url(line)))
+    return "\n".join(redacted_lines) + ("\n" if text.endswith("\n") else "")
+
+
+def parse_toml(path: Path) -> dict:
+    try:
+        import tomllib
+    except ModuleNotFoundError:
+        return {}
+    try:
+        return tomllib.loads(path.read_text(encoding="utf-8", errors="replace"))
+    except Exception:
+        return {}
+
+
+def nested_get(data: dict, *keys: str) -> dict:
+    cur = data
+    for key in keys:
+        if not isinstance(cur, dict):
+            return {}
+        cur = cur.get(key, {})
+    return cur if isinstance(cur, dict) else {}
+
+
+def summarize_codex_config() -> dict:
+    files = []
+    config_text_parts = []
+    config_paths = []
+    base = codex_home()
+    if (base / "config.toml").exists():
+        config_paths.append(base / "config.toml")
+    config_paths.extend(sorted(base.glob("*.config.toml")))
+    seen = set()
+    mcp_servers = []
+    plugins = []
+    marketplaces = []
+    for path in config_paths:
+        resolved = path.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        raw = path.read_text(encoding="utf-8", errors="replace")
+        parsed = parse_toml(path)
+        redacted = redact_text(raw)
+        config_text_parts.append(f"# Source: {path}\n{redacted}\n")
+        files.append({"path": str(path), "exists": True, "sha256": hashlib.sha256(raw.encode("utf-8")).hexdigest()})
+        for name, server in nested_get(parsed, "mcp_servers").items():
+            item = {"name": name, **redact_value(name, server)}
+            mcp_servers.append(item)
+        for name, plugin in nested_get(parsed, "plugins").items():
+            plugins.append({"name": name, **redact_value(name, plugin)})
+        for name, marketplace in nested_get(parsed, "marketplaces").items():
+            marketplaces.append({"name": name, **redact_value(name, marketplace)})
+    return {
+        "files": files,
+        "mcp_servers": mcp_servers,
+        "plugins": plugins,
+        "marketplaces": marketplaces,
+        "redacted_toml": "\n".join(config_text_parts).strip() + ("\n" if config_text_parts else ""),
+    }
+
+
+def summarize_ssh_config() -> dict:
+    ssh_config = Path.home() / ".ssh" / "config"
+    hosts = []
+    if not ssh_config.exists():
+        return {"files": [], "hosts": hosts}
+    current: dict | None = None
+    for raw_line in ssh_config.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split(None, 1)
+        if len(parts) != 2:
+            continue
+        key, value = parts[0], parts[1]
+        if key.lower() == "host":
+            current = {"host": value, "options": {}}
+            hosts.append(current)
+        elif current is not None:
+            if key.lower() == "identityfile":
+                value = str(Path(value).name) if value else "<REDACTED>"
+            current["options"][key] = redact_value(key, value)
+    return {
+        "files": [{"path": str(ssh_config), "exists": True}],
+        "hosts": hosts,
+    }
+
+
+def summarize_git_remotes() -> dict:
+    result = run(["git", "config", "--global", "--get-regexp", r"^url\..*\.insteadof$|^remote\..*\.url$"], check=False)
+    remotes = []
+    for line in result.stdout.splitlines():
+        if not line.strip() or " " not in line:
+            continue
+        key, value = line.split(" ", 1)
+        remotes.append({"key": key, "value": redact_url(value)})
+    return {"global_git_url_settings": remotes}
+
+
+def discover_setup() -> dict:
+    codex_config = summarize_codex_config()
+    return {
+        "generated_at": now_iso(),
+        "codex_config": {k: v for k, v in codex_config.items() if k != "redacted_toml"},
+        "mcp_servers": codex_config["mcp_servers"],
+        "plugins": codex_config["plugins"],
+        "marketplaces": codex_config["marketplaces"],
+        "ssh": summarize_ssh_config(),
+        "git": summarize_git_remotes(),
+        "secrets_policy": {
+            "raw_credentials_synced": False,
+            "notes": [
+                "Tokens, passwords, auth files, cookies, sessions, and private keys are not copied.",
+                "MCP and Git URLs are redacted when credentials or token-like values are detected.",
+                "Recreate device-local secrets with each provider's login or credential setup flow.",
+            ],
+        },
+        "redacted_toml": codex_config["redacted_toml"],
+    }
 
 
 def iter_files(root: Path):
@@ -236,7 +404,16 @@ def copy_skill_source(skill: dict, repo_dir: Path) -> None:
     shutil.copytree(source, dest, ignore=lambda directory, names: [n for n in names if should_exclude(Path(directory) / n)])
 
 
-def manifest_for(skills: list[dict], repo_full_name: str | None) -> dict:
+def manifest_for(skills: list[dict], repo_full_name: str | None, setup: dict | None = None) -> dict:
+    setup_summary = None
+    if setup:
+        setup_summary = {
+            "codex_config_files": len(setup["codex_config"].get("files", [])),
+            "mcp_servers": len(setup.get("mcp_servers", [])),
+            "plugins": len(setup.get("plugins", [])),
+            "marketplaces": len(setup.get("marketplaces", [])),
+            "ssh_hosts": len(setup.get("ssh", {}).get("hosts", [])),
+        }
     return {
         "schema_version": 1,
         "generated_at": now_iso(),
@@ -250,6 +427,7 @@ def manifest_for(skills: list[dict], repo_full_name: str | None) -> dict:
             "total": len(skills),
             "syncable": sum(1 for item in skills if item["syncable"]),
             "inventory_only": sum(1 for item in skills if not item["syncable"]),
+            "setup": setup_summary,
         },
         "skills": skills,
     }
@@ -279,17 +457,18 @@ def repo_readme(repo_full_name: str | None) -> str:
     repo_text = repo_full_name or "your private GitHub repository"
     return "\n".join(
         [
-            "# Codex Skills Sync",
+            "# Codex Cross-device Sync",
             "",
-            f"This private repository stores a portable Codex skills catalog for `{repo_text}`.",
+            f"This private repository stores a portable Codex setup snapshot for `{repo_text}`.",
             "",
-            "Use the `cross-device-sync-skills-list` skill to scan, sync, and restore skills across devices.",
+            "Use the `cross-device-sync` skill to scan, sync, and restore safe Codex setup metadata across devices.",
             "",
             "Important files:",
             "",
             "- `skills-list.json`: machine-readable inventory.",
             "- `skills-list.md`: readable catalog.",
             "- `skill_sources/`: copied user-managed skill folders.",
+            "- `config/`: redacted Codex config, MCP, SSH, and Git setup manifests.",
             "- `change-log.jsonl`: sync history.",
             "",
         ]
@@ -301,6 +480,8 @@ def find_this_skill_dir() -> Path:
         Path(__file__).resolve().parents[1],
         Path.home() / ".agents" / "skills" / SKILL_NAME,
         codex_home() / "skills" / SKILL_NAME,
+        Path.home() / ".agents" / "skills" / LEGACY_SKILL_NAME,
+        codex_home() / "skills" / LEGACY_SKILL_NAME,
     ]
     for candidate in candidates:
         if (candidate / "SKILL.md").exists():
@@ -383,19 +564,207 @@ def append_change_log(repo_dir: Path, action: str, manifest: dict) -> None:
         handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 
+def write_setup_files(repo_dir: Path, setup: dict) -> None:
+    config_dir = repo_dir / "config"
+    if config_dir.exists():
+        shutil.rmtree(config_dir)
+    config_dir.mkdir(parents=True, exist_ok=True)
+    redacted_toml = setup.pop("redacted_toml", "")
+    (config_dir / "codex-config-summary.json").write_text(json.dumps(setup["codex_config"], indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    (config_dir / "codex-config-redacted.toml").write_text(redacted_toml, encoding="utf-8")
+    (config_dir / "mcp-servers.json").write_text(json.dumps(setup["mcp_servers"], indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    (config_dir / "ssh-config-summary.json").write_text(json.dumps(setup["ssh"], indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    (config_dir / "git-remotes.json").write_text(json.dumps(setup["git"], indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    (config_dir / "restore-notes.md").write_text(restore_notes(setup), encoding="utf-8")
+
+
+def restore_notes(setup: dict) -> str:
+    lines = [
+        "# Restore Notes",
+        "",
+        "This snapshot intentionally excludes raw credentials.",
+        "",
+        "## Recreate Locally",
+        "",
+        "- Re-authenticate GitHub, Google Drive, Notion, OpenAI, or other connectors in Codex/ChatGPT as needed.",
+        "- Recreate MCP tokens and provider API keys through environment variables or provider setup flows.",
+        "- Generate or copy SSH private keys through your password manager or secure key process; this repo does not store them.",
+        "- Review `codex-config-redacted.toml` before applying any config to another machine.",
+        "",
+        "## Snapshot Counts",
+        "",
+        f"- MCP servers: {len(setup.get('mcp_servers', []))}",
+        f"- Plugins: {len(setup.get('plugins', []))}",
+        f"- Marketplaces: {len(setup.get('marketplaces', []))}",
+        f"- SSH hosts: {len(setup.get('ssh', {}).get('hosts', []))}",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def load_cloud_snapshot(repo_dir: Path) -> dict:
+    snapshot: dict = {"skills": [], "config": {}}
+    skills_path = repo_dir / "skills-list.json"
+    if skills_path.exists():
+        snapshot["skills"] = json.loads(skills_path.read_text(encoding="utf-8")).get("skills", [])
+    config_dir = repo_dir / "config"
+    for name in [
+        "codex-config-summary.json",
+        "mcp-servers.json",
+        "ssh-config-summary.json",
+        "git-remotes.json",
+    ]:
+        path = config_dir / name
+        if path.exists():
+            snapshot["config"][name] = json.loads(path.read_text(encoding="utf-8"))
+    return snapshot
+
+
+def stable_json_hash(value) -> str:
+    return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+def compare_skill_sets(local_skills: list[dict], cloud_skills: list[dict]) -> dict:
+    def key(item: dict) -> str:
+        return f"{item.get('scope')}::{item.get('folder_name')}"
+
+    local_by_key = {key(item): item for item in local_skills if item.get("syncable")}
+    cloud_by_key = {key(item): item for item in cloud_skills if item.get("syncable")}
+    local_keys = set(local_by_key)
+    cloud_keys = set(cloud_by_key)
+    changed = []
+    for item_key in sorted(local_keys & cloud_keys):
+        local = local_by_key[item_key]
+        cloud = cloud_by_key[item_key]
+        if local.get("sha256") != cloud.get("sha256"):
+            changed.append(
+                {
+                    "key": item_key,
+                    "name": local.get("name") or cloud.get("name"),
+                    "local_sha256": local.get("sha256"),
+                    "cloud_sha256": cloud.get("sha256"),
+                    "resolution_options": ["cloud_wins", "local_wins", "manual_merge", "skip"],
+                }
+            )
+    return {
+        "local_only": [local_by_key[k] for k in sorted(local_keys - cloud_keys)],
+        "cloud_only": [cloud_by_key[k] for k in sorted(cloud_keys - local_keys)],
+        "changed": changed,
+    }
+
+
+def compare_setup(local_setup: dict, cloud_config: dict) -> dict:
+    comparisons = {}
+    local_map = {
+        "codex-config-summary.json": local_setup.get("codex_config", {}),
+        "mcp-servers.json": local_setup.get("mcp_servers", []),
+        "ssh-config-summary.json": local_setup.get("ssh", {}),
+        "git-remotes.json": local_setup.get("git", {}),
+    }
+    for name, local_value in local_map.items():
+        cloud_value = cloud_config.get(name)
+        if cloud_value is None:
+            status = "local_only"
+        elif stable_json_hash(local_value) == stable_json_hash(cloud_value):
+            status = "same"
+        else:
+            status = "changed"
+        comparisons[name] = {
+            "status": status,
+            "local_hash": stable_json_hash(local_value),
+            "cloud_hash": stable_json_hash(cloud_value) if cloud_value is not None else None,
+            "resolution_options": ["cloud_base", "local_base", "manual_merge", "skip"] if status == "changed" else [],
+        }
+    cloud_only = sorted(set(cloud_config) - set(local_map))
+    return {
+        "files": comparisons,
+        "cloud_only": cloud_only,
+        "secret_required": [
+            "Re-enter MCP tokens or API keys if a restored server needs them.",
+            "Re-authenticate app connectors such as GitHub, Google Drive, Notion, or OpenAI.",
+            "Recreate or securely copy SSH private keys; this sync repo never stores them.",
+        ],
+    }
+
+
+def write_diff_report(repo_dir: Path, report: dict) -> None:
+    (repo_dir / "diff-report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    lines = [
+        "# Cross-device Sync Diff Report",
+        "",
+        f"Generated: {report['generated_at']}",
+        f"Repository: {report.get('repository_full_name') or 'not configured'}",
+        "",
+        "## Skills",
+        "",
+        f"- Local only: {len(report['skills']['local_only'])}",
+        f"- Cloud only: {len(report['skills']['cloud_only'])}",
+        f"- Changed: {len(report['skills']['changed'])}",
+        "",
+        "## Setup",
+        "",
+    ]
+    for name, item in report["setup"]["files"].items():
+        lines.append(f"- `{name}`: {item['status']}")
+    lines.extend(
+        [
+            "",
+            "## Secret Required",
+            "",
+            *[f"- {item}" for item in report["setup"]["secret_required"]],
+            "",
+            "## Resolution Choices",
+            "",
+            "- `cloud_wins` / `cloud_base`: use the cloud snapshot as the base for this device.",
+            "- `local_wins` / `local_base`: push this device's snapshot to cloud.",
+            "- `manual_merge`: keep both sides visible and merge intentionally.",
+            "- `skip`: leave the item unchanged.",
+            "",
+        ]
+    )
+    (repo_dir / "diff-report.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def diff_snapshot(args: argparse.Namespace) -> dict:
+    config = load_config()
+    repo_dir = resolve_local_repo(args, config)
+    if getattr(args, "pull", True):
+        git_pull(repo_dir)
+    cloud = load_cloud_snapshot(repo_dir)
+    local_skills = discover_skills(include_repo=args.include_repo)
+    local_setup = discover_setup()
+    report = {
+        "generated_at": now_iso(),
+        "repository_full_name": resolve_repo(args, config),
+        "device": {
+            "hostname": os.environ.get("COMPUTERNAME") or os.environ.get("HOSTNAME") or "",
+            "home": str(Path.home()),
+            "codex_home": str(codex_home()),
+        },
+        "skills": compare_skill_sets(local_skills, cloud["skills"]),
+        "setup": compare_setup(local_setup, cloud["config"]),
+    }
+    write_diff_report(repo_dir, report)
+    print(json.dumps(report, indent=2, ensure_ascii=False))
+    return report
+
+
 def prepare(args: argparse.Namespace, action: str = "prepare") -> dict:
     config = load_config()
     repo_full_name = resolve_repo(args, config)
     repo_dir = resolve_local_repo(args, config)
     ensure_git_repo(repo_dir, repo_full_name)
     skills = discover_skills(include_repo=args.include_repo)
-    manifest = manifest_for(skills, repo_full_name)
+    setup = None if getattr(args, "no_config", False) else discover_setup()
+    manifest = manifest_for(skills, repo_full_name, setup)
     clean_skill_sources(repo_dir)
     for skill in skills:
         if skill["syncable"]:
             copy_skill_source(skill, repo_dir)
     (repo_dir / "skills-list.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     (repo_dir / "skills-list.md").write_text(markdown_catalog(manifest), encoding="utf-8")
+    if setup:
+        write_setup_files(repo_dir, setup)
     (repo_dir / "README.md").write_text(repo_readme(repo_full_name), encoding="utf-8")
     append_change_log(repo_dir, action, manifest)
     save_config(
@@ -406,7 +775,7 @@ def prepare(args: argparse.Namespace, action: str = "prepare") -> dict:
             "updated_at": now_iso(),
         }
     )
-    print(f"Prepared {manifest['summary']['syncable']} syncable skills at {repo_dir}")
+    print(f"Prepared {manifest['summary']['syncable']} syncable skills and setup inventory at {repo_dir}")
     return manifest
 
 
@@ -456,7 +825,8 @@ def status(args: argparse.Namespace) -> None:
     config = load_config()
     repo_dir = resolve_local_repo(args, config)
     local = discover_skills(include_repo=args.include_repo)
-    print(json.dumps(manifest_for(local, resolve_repo(args, config)), indent=2, ensure_ascii=False))
+    setup = None if getattr(args, "no_config", False) else discover_setup()
+    print(json.dumps(manifest_for(local, resolve_repo(args, config), setup), indent=2, ensure_ascii=False))
     if (repo_dir / "skills-list.json").exists():
         remote_manifest = json.loads((repo_dir / "skills-list.json").read_text(encoding="utf-8"))
         remote_hashes = {(item["scope"], item["folder_name"]): item["sha256"] for item in remote_manifest.get("skills", [])}
@@ -507,7 +877,7 @@ def bootstrap(args: argparse.Namespace) -> None:
         except Exception as exc:
             print(f"Could not create GitHub repo automatically: {exc}", file=sys.stderr)
             print("Create it as a private repository, then run sync.", file=sys.stderr)
-    prepare(argparse.Namespace(repo=repo_full_name, local_repo=args.local_repo, include_repo=args.include_repo), action="bootstrap")
+    prepare(argparse.Namespace(repo=repo_full_name, local_repo=args.local_repo, include_repo=args.include_repo, no_config=args.no_config), action="bootstrap")
 
 
 def github_api_create_repo(repo_full_name: str, private: bool = True) -> None:
@@ -548,22 +918,28 @@ def github_api_create_repo(repo_full_name: str, private: bool = True) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo", help="GitHub repository full name, e.g. owner/chandler_codex_skills_list")
+    parser.add_argument("--repo", help="GitHub repository full name, e.g. owner/owner_codex_sync")
     parser.add_argument("--owner", help="GitHub owner or organization for the catalog repository")
     parser.add_argument("--repo-name", help="Catalog repository name, default: <owner>_codex_skills_list")
     parser.add_argument("--local-repo", help="Local sync repository path")
     parser.add_argument("--include-repo", action="store_true", help="Also inventory repo-scoped .agents/skills")
+    parser.add_argument("--no-config", action="store_true", help="Skip Codex config, MCP, SSH, and Git setup inventory")
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("scan")
     sub.add_parser("status")
     sub.add_parser("prepare")
+    diff_parser = sub.add_parser("diff")
+    diff_parser.add_argument("--no-pull", dest="pull", action="store_false")
     sync_parser = sub.add_parser("sync")
     sync_parser.add_argument("--no-pull", action="store_true")
     sync_parser.add_argument("--no-push", action="store_true")
-    install_parser = sub.add_parser("install")
+    install_parser = sub.add_parser("install-skills")
     install_parser.add_argument("--force", action="store_true")
     install_parser.add_argument("--no-pull", dest="pull", action="store_false")
+    legacy_install_parser = sub.add_parser("install")
+    legacy_install_parser.add_argument("--force", action="store_true")
+    legacy_install_parser.add_argument("--no-pull", dest="pull", action="store_false")
     configure_parser = sub.add_parser("configure")
     configure_parser.add_argument("--repo", required=False)
     configure_parser.add_argument("--owner", required=False)
@@ -574,6 +950,7 @@ def main() -> None:
     bootstrap_parser.add_argument("--repo", required=False)
     bootstrap_parser.add_argument("--repo-name", required=False)
     bootstrap_parser.add_argument("--local-repo", required=False)
+    bootstrap_parser.add_argument("--no-config", action="store_true")
     bootstrap_parser.add_argument("--create", action="store_true", help="Try to create the private catalog repo when credentials allow it")
     create_parser = sub.add_parser("create-github-repo")
     create_parser.add_argument("--owner", required=False)
@@ -585,11 +962,14 @@ def main() -> None:
 
     args = parser.parse_args()
     if args.command == "scan":
-        print(json.dumps(manifest_for(discover_skills(args.include_repo), resolve_repo(args, load_config())), indent=2, ensure_ascii=False))
+        setup = None if args.no_config else discover_setup()
+        print(json.dumps(manifest_for(discover_skills(args.include_repo), resolve_repo(args, load_config()), setup), indent=2, ensure_ascii=False))
     elif args.command == "status":
         status(args)
     elif args.command == "prepare":
         prepare(args)
+    elif args.command == "diff":
+        diff_snapshot(args)
     elif args.command == "sync":
         config = load_config()
         repo_dir = resolve_local_repo(args, config)
@@ -597,7 +977,7 @@ def main() -> None:
             git_pull(repo_dir)
         manifest = prepare(args, action="sync")
         git_commit_and_push(repo_dir, f"Sync Codex skills from {manifest['device']['hostname'] or 'device'}", push=not args.no_push)
-    elif args.command == "install":
+    elif args.command in ("install", "install-skills"):
         install(args)
     elif args.command == "configure":
         configure(args)
