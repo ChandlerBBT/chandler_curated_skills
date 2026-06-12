@@ -90,10 +90,14 @@ First run:
 
 ## Restore Policy
 
-- `install-skills` may copy skills after backing up local conflicts.
+- Act as a restore guide after installation and restart. Do not merely report what exists in the snapshot; explain what was restored, what still needs user input, and what is intentionally blocked by the safety model.
+- Skills are restorable automatically. Install or update syncable skills from the cloud snapshot into `$HOME/.agents/skills` without asking when there is no meaningful local conflict.
+- If an existing local skill differs from the cloud version, back it up when that is clearly safe. Ask the user how to resolve the conflict when both sides appear intentionally edited, when the backup would be ambiguous, or when replacing it could discard user work.
+- MCP servers, connector auth, API keys, OAuth sessions, SSH private keys, and other secrets are not automatically restored. When a redacted MCP entry or auth-dependent setting is found, identify the missing item by name and guide the user to provide the token/key, set an environment variable, or re-authorize the provider.
+- For MCP entries with redacted URLs, generate the exact local config shape with placeholders and ask for the missing token or credential. If the user provides the credential in the current session, apply it to the local config carefully without printing the secret back.
 - Config restore is advisory by default. Do not overwrite another device's `config.toml` or SSH config automatically.
-- When the user asks to restore config, generate a reviewable patch or checklist first.
-- Device-local secrets must be recreated through the appropriate provider UI, CLI, or environment-variable setup.
+- When the user asks to restore config, generate a reviewable patch or checklist first, then apply only the non-secret portions automatically when they are safe and clearly requested.
+- Device-local secrets must be recreated through the appropriate provider UI, CLI, environment-variable setup, or a credential the user explicitly provides for this restore.
 
 ## Diff And Conflict Workflow
 
