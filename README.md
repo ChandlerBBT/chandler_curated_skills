@@ -22,7 +22,7 @@ Curated Codex skills for reusable workflows, research discipline, and cross-devi
 |---|---|---|
 | `artifact-manager` | 管理报告、Markdown、HTML、图表、PPT 资产、数据表和研究产物，自动维护目录、版本、changelog 和 artifact index。 | `skills/artifact-manager` |
 | `stock-analysis` | 面向股票研究的严谨投研流程，覆盖基本面、财报质量、估值、技术择时、催化验证、仓位风控和复盘规则回写。 | `skills/stock-analysis` |
-| `cross-device-sync` | 通过每个用户自己的 GitHub 私有仓库维护 Codex skills、红acted Codex 配置、MCP 链接、SSH alias 和 Git remote 信息，方便多设备同步。默认同步仓库名为 `<github-owner>_codex_sync`。 | `skills/cross-device-sync` |
+| `cross-device-sync` | 通过每个用户自己的 GitHub 私有仓库维护 Codex skills、脱敏后的 Codex 配置、MCP 链接、SSH alias 和 Git remote 信息，方便多设备同步。默认同步仓库名为 `<github-owner>_codex_sync`。 | `skills/cross-device-sync` |
 
 ### 推荐安装方式
 
