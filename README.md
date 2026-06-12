@@ -1,115 +1,158 @@
-# chandler_curated_skills
+<div align="center">
 
-Chandler's curated Codex skills.
+# Chandler Curated Skills
 
-This repository currently contains:
+Curated Codex skills for reusable workflows, research discipline, and cross-device setup.
 
-- `artifact-manager`: keeps research deliverables organized with stable folders, versions, changelog, artifact index, and release packages.
-- `stock-analysis` (`stock_analysis`): disciplined stock research workflow covering fundamentals, financial quality, valuation, technical timing, catalysts, risk controls, and failure-review rule writeback.
+精心维护的 Codex Skills 集合，用于复用工作流、研究方法和跨设备配置同步。
 
-## Repository Layout
+[中文](#中文) | [English](#english)
+
+</div>
+
+---
+
+## 中文
+
+`chandler_curated_skills` 是一个 Codex Skills 仓库，收集我日常高频使用、已经沉淀成稳定流程的技能。你可以把某个 skill 安装到自己的 Codex 环境里，让 Codex 在对应任务中自动采用这套流程。
+
+### 当前包含的 Skills
+
+| Skill | 用途 | 安装路径 |
+|---|---|---|
+| `artifact-manager` | 管理报告、Markdown、HTML、图表、PPT 资产、数据表和研究产物，自动维护目录、版本、changelog 和 artifact index。 | `skills/artifact-manager` |
+| `stock-analysis` | 面向股票研究的严谨投研流程，覆盖基本面、财报质量、估值、技术择时、催化验证、仓位风控和复盘规则回写。 | `skills/stock-analysis` |
+| `cross-device-sync-skills-list` | 通过每个用户自己的 GitHub 私有仓库维护 Codex skills 清单和可同步源码，方便多设备同步。默认清单仓库名为 `<github-owner>_codex_skills_list`。 | `skills/cross-device-sync-skills-list` |
+
+### 推荐安装方式
+
+在 Codex 中直接让内置安装器安装指定路径：
 
 ```text
-chandler_curated_skills/
-|-- skills/
-|   |-- artifact-manager/
-|   |   `-- SKILL.md
-|   `-- stock-analysis/
-|       |-- SKILL.md
-|       |-- agents/
-|       `-- references/
-`-- docs/
-    |-- artifact-manager.md
-    `-- stock-analysis.md
+Use $skill-installer to install the skill from:
+https://github.com/ChandlerBBT/chandler_curated_skills/tree/main/skills/cross-device-sync-skills-list
 ```
 
-## Install With Codex
-
-In Codex, ask:
+替换最后的路径即可安装其他 skill：
 
 ```text
-Install the artifact-manager skill from:
 https://github.com/ChandlerBBT/chandler_curated_skills/tree/main/skills/artifact-manager
-```
-
-For stock research, ask:
-
-```text
-Install the stock-analysis skill from:
 https://github.com/ChandlerBBT/chandler_curated_skills/tree/main/skills/stock-analysis
 ```
 
-Restart Codex after installation so the new skill can be loaded.
+安装后请重启 Codex，或在 Codex App 中执行 **Force Reload Skills**。
 
-## Install With The Skill Installer Script
+### 手动安装
 
-If your Codex environment includes the built-in `skill-installer` helper, run:
+把目标 skill 文件夹复制到你的用户级 skills 目录：
 
-```bash
-python ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py \
-  --repo ChandlerBBT/chandler_curated_skills \
-  --path skills/artifact-manager
+```text
+Windows: %USERPROFILE%\.agents\skills\<skill-name>\
+macOS/Linux: ~/.agents/skills/<skill-name>/
 ```
 
-For `stock-analysis`:
+部分 Codex 环境也会扫描：
 
-```bash
-python ~/.codex/skills/.system/skill-installer/scripts/install-skill-from-github.py \
-  --repo ChandlerBBT/chandler_curated_skills \
-  --path skills/stock-analysis
+```text
+Windows: %USERPROFILE%\.codex\skills\<skill-name>\
+macOS/Linux: ~/.codex/skills/<skill-name>/
 ```
 
-On Windows PowerShell, the same command is typically:
+### 跨设备同步快速开始
 
-```powershell
-python "$env:USERPROFILE\.codex\skills\.system\skill-installer\scripts\install-skill-from-github.py" `
-  --repo ChandlerBBT/chandler_curated_skills `
-  --path skills/artifact-manager
+安装 `cross-device-sync-skills-list` 后，在 Codex 中说：
+
+```text
+Use $cross-device-sync-skills-list to bootstrap my skills sync.
 ```
 
-For `stock-analysis`:
+首次运行时，它会：
 
-```powershell
-python "$env:USERPROFILE\.codex\skills\.system\skill-installer\scripts\install-skill-from-github.py" `
-  --repo ChandlerBBT/chandler_curated_skills `
-  --path skills/stock-analysis
-```
+1. 识别或询问你的 GitHub owner。
+2. 默认使用 `<owner>_codex_skills_list` 作为私有清单仓库名，例如 `jack_codex_skills_list`。
+3. 检测该仓库是否存在。
+4. 如果不存在，在具备授权时创建私有仓库。
+5. 扫描本机 Codex skills，生成 `skills-list.json`、`skills-list.md` 和可同步 skill 源码副本。
+6. 在其他设备上根据云端清单安装或更新 skills。
 
-Restart Codex after installation.
+更详细说明见 [`docs/cross-device-sync-skills-list.md`](docs/cross-device-sync-skills-list.md)。
 
-## Manual Install
-
-Copy `skills/artifact-manager/` into your global Codex skills directory.
-For stock research, copy `skills/stock-analysis/`.
-
-Common locations:
-
-- Windows: `%USERPROFILE%\.codex\skills\artifact-manager\`
-- macOS/Linux: `~/.codex/skills/artifact-manager/`
-
-Some Codex or agent setups may use `.agents/skills` instead:
-
-- Windows: `%USERPROFILE%\.agents\skills\artifact-manager\`
-- macOS/Linux: `~/.agents/skills/artifact-manager/`
-
-Restart Codex after copying the folder.
-
-## About artifact-manager
-
-Read the first-use guide here:
+### 文档
 
 - [`docs/artifact-manager.md`](docs/artifact-manager.md)
-
-Short version: this skill is meant to auto-trigger when Codex creates, edits, exports, organizes, or packages research artifacts such as reports, Markdown files, HTML files, charts, PPT assets, data tables, and research notes. You can also manually mention `artifact-manager` when you want to force the workflow.
-
-## About stock-analysis
-
-Read the first-use guide here:
-
 - [`docs/stock-analysis.md`](docs/stock-analysis.md)
+- [`docs/cross-device-sync-skills-list.md`](docs/cross-device-sync-skills-list.md)
 
-Short version: this skill is meant to auto-trigger for stock research workflows such as screening, fundamentals, financial quality, valuation, technical timing, catalyst validation, risk controls, and failure-review rule writeback. Its display name is `stock_analysis`; the internal Codex skill name is `stock-analysis` because skill names are normalized to hyphen-case.
+---
 
-## Updating A Skill
+## English
 
-To update an existing installation, reinstall from the same path or replace the local `artifact-manager` folder with the latest repository version, then restart Codex.
+`chandler_curated_skills` is a Codex Skills repository for reusable workflows that have become stable enough to share. Install a skill into your Codex environment so Codex can automatically follow the right process for matching tasks.
+
+### Included Skills
+
+| Skill | Purpose | Install path |
+|---|---|---|
+| `artifact-manager` | Keeps reports, Markdown, HTML, charts, slide assets, data tables, and research deliverables organized with directories, versions, changelog, and artifact index. | `skills/artifact-manager` |
+| `stock-analysis` | A rigorous public-equity research workflow covering fundamentals, financial quality, valuation, technical timing, catalysts, position risk, and failure-review rule writeback. | `skills/stock-analysis` |
+| `cross-device-sync-skills-list` | Maintains a Codex skills inventory and syncable skill source copies through each user's own private GitHub repository. The default catalog repo name is `<github-owner>_codex_skills_list`. | `skills/cross-device-sync-skills-list` |
+
+### Recommended Install
+
+Ask Codex to install a skill with the built-in installer:
+
+```text
+Use $skill-installer to install the skill from:
+https://github.com/ChandlerBBT/chandler_curated_skills/tree/main/skills/cross-device-sync-skills-list
+```
+
+Swap the final path to install another skill:
+
+```text
+https://github.com/ChandlerBBT/chandler_curated_skills/tree/main/skills/artifact-manager
+https://github.com/ChandlerBBT/chandler_curated_skills/tree/main/skills/stock-analysis
+```
+
+Restart Codex after installation, or run **Force Reload Skills** in the Codex App.
+
+### Manual Install
+
+Copy the target skill folder into your user-level skills directory:
+
+```text
+Windows: %USERPROFILE%\.agents\skills\<skill-name>\
+macOS/Linux: ~/.agents/skills/<skill-name>/
+```
+
+Some Codex environments also scan:
+
+```text
+Windows: %USERPROFILE%\.codex\skills\<skill-name>\
+macOS/Linux: ~/.codex/skills/<skill-name>/
+```
+
+### Cross-device Sync Quick Start
+
+After installing `cross-device-sync-skills-list`, ask Codex:
+
+```text
+Use $cross-device-sync-skills-list to bootstrap my skills sync.
+```
+
+On first run, it will:
+
+1. Infer or ask for your GitHub owner.
+2. Default to `<owner>_codex_skills_list` as the private catalog repo name, such as `jack_codex_skills_list`.
+3. Check whether that repository exists.
+4. Create the private repository when an authorized GitHub path is available.
+5. Scan local Codex skills and generate `skills-list.json`, `skills-list.md`, and syncable skill source copies.
+6. Install or update skills from the cloud catalog on your other devices.
+
+See [`docs/cross-device-sync-skills-list.md`](docs/cross-device-sync-skills-list.md) for details.
+
+### Documentation
+
+- [`docs/artifact-manager.md`](docs/artifact-manager.md)
+- [`docs/stock-analysis.md`](docs/stock-analysis.md)
+- [`docs/cross-device-sync-skills-list.md`](docs/cross-device-sync-skills-list.md)
+
